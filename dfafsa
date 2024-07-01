@@ -1,0 +1,121 @@
+// Include Libraries
+#include "Arduino.h"
+#include "DCMDriverL298.h"
+#include <EEPROM.h>
+
+// Pin Definitions
+#define DCMOTORDRIVERL298_PIN_INT1  2
+#define DCMOTORDRIVERL298_PIN_ENB  6
+#define DCMOTORDRIVERL298_PIN_INT2  3
+#define DCMOTORDRIVERL298_PIN_ENA  5
+#define DCMOTORDRIVERL298_PIN_INT3  4
+#define DCMOTORDRIVERL298_PIN_INT4  7
+#define COMMAND_COUNT_ADDR 0
+#define COMMAND_START_ADDR 2
+#define MAX_COMMANDS 10
+
+// Global variables and defines
+int speedA = 0;
+int speedB = 0;
+int directionA = 0;
+int directionB = 0;
+char motorSelect = 'A';
+bool recording = false;
+
+// object initialization
+DCMDriverL298 dcMotorDriverL298(DCMOTORDRIVERL298_PIN_ENA, DCMOTORDRIVERL298_PIN_INT1, DCMOTORDRIVERL298_PIN_INT2, DCMOTORDRIVERL298_PIN_ENB, DCMOTORDRIVERL298_PIN_INT3, DCMOTORDRIVERL298_PIN_INT4);
+
+struct Command {
+    char motorSelect;
+    int speed;
+    int direction;
+};
+
+void setup() 
+{
+    // Setup Serial which is useful for debugging
+    // Use the Serial Monitor to view printed messages
+    Serial.begin(9600);
+    while (!Serial) ; // wait for serial port to connect. Needed for native USB
+    Serial.println("start");
+}
+
+
+
+void loop() {
+    if (Serial.available() > 0) {
+        String input = Serial.readStringUntil('\n');
+        if (input.startsWith("R,")) {
+            recording = true;
+            // Reset command count in EEPROM
+            EEPROM.put(COMMAND_COUNT_ADDR, 0);
+        } else if (input.startsWith("P,")) {
+            recording = false;
+            playCommands();
+        } else if (recording) {
+            recordCommand(input);
+        } else if (!recording) {
+            execute(input);
+        }
+        
+    }
+}
+
+void recordCommand(String input) {
+    int commaIndex1 = input.indexOf(',');
+    int commaIndex2 = input.indexOf(',', commaIndex1 + 1);
+    if (commaIndex1 != -1 && commaIndex2 != -1) {
+        Command command;
+        command.motorSelect = input.substring(0, commaIndex1).charAt(0);
+        command.speed = input.substring(commaIndex1 + 1, commaIndex2).toInt();
+        command.direction = input.substring(commaIndex2 + 1).toInt();
+
+        int commandCount;
+        EEPROM.get(COMMAND_COUNT_ADDR, commandCount);
+        if (commandCount < MAX_COMMANDS) {
+            int address = COMMAND_START_ADDR + (commandCount * sizeof(Command));
+            EEPROM.put(address, command);
+            commandCount++;
+            EEPROM.put(COMMAND_COUNT_ADDR, commandCount);
+        }
+    }
+}
+
+void playCommands() {
+    int commandCount;
+    EEPROM.get(COMMAND_COUNT_ADDR, commandCount);
+    for (int i = 0; i < commandCount; i++) {
+        Command command;
+        int address = COMMAND_START_ADDR + (i * sizeof(Command));
+        EEPROM.get(address, command);
+        executeCommand(command);
+    }
+}
+
+void executeCommand(Command command) {
+    // Implement motor control logic here based on the command
+    // Example:
+    if (command.motorSelect == 'A') {
+        dcMotorDriverL298.setMotorA(command.speed, command.direction);
+    } else if (command.motorSelect == 'B') {
+        dcMotorDriverL298.setMotorB(command.speed, command.direction);
+    }
+}
+
+void execute(String input) {
+    int commaIndex1 = input.indexOf(',');
+    int commaIndex2 = input.indexOf(',', commaIndex1 + 1);
+    if (commaIndex1 != -1 && commaIndex2 != -1) {
+        char motorSelect = input.substring(0, commaIndex1).charAt(0);
+        int speed = input.substring(commaIndex1 + 1, commaIndex2).toInt();
+        int direction = input.substring(commaIndex2 + 1).toInt();
+
+        // Assuming functions to control motors are setMotorA and setMotorB
+        // and a function to set direction is setDirection which accepts motor identifier, speed, and direction
+        if (motorSelect == 'A') {
+            dcMotorDriverL298.setMotorA(speed, direction);
+        } else if (motorSelect == 'B') {
+            dcMotorDriverL298.setMotorB(speed, direction);
+        }
+    }
+}

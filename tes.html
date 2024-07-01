@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="https://cdn.jsdelivr.net/npm/actioncable@5.2.8-1/lib/assets/compiled/action_cable.min.js"></script>
+</head>
+<body>
+<!-- Ensure there's an element with ID "send-button" in the HTML -->
+<button id="send-button">Send</button>
+<input type="text" id="message-input">
+<div id="chat-log"></div>
+
+<!-- Create a WebSocket connection to Action Cable -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const cable = ActionCable.createConsumer("ws://mastion-backend-e2bbfddfbd53.herokuapp.com/api/v1/connect");
+
+    // Subscribe to a channel
+    const chatChannel = cable.subscriptions.create(
+      { channel: "Api::V1::ChatRoomsChannel", chat_room_id: 1 }, {
+
+      received: (data) => {
+        console.log("Received data from ChatChannel:", data);
+        // Update the chat log with the new message
+        document.getElementById("chat-log").innerHTML += `<p>${data.directionx}, ${data.directiony}</p>`;
+      }
+    });
+
+    // Send a message to the channel
+    document.getElementById("send-button").addEventListener("click", () => {
+      chatChannel.send({ message: document.getElementById("message-input").value });
+    });
+  });
+</script>
+</body>
+</html>
