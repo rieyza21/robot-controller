@@ -3,69 +3,12 @@ import websocket
 import threading
 import json
 import time
-#import psycopg2
-
-# Database connection settings
-#db_config = {
-#    'dbname': 'your_dbname',
-#    'user': 'your_username',
-#    'password': 'your_password',
-#    'host': 'localhost'
-#}
 
 # Replace '/dev/ttyUSB0' with your serial port and adjust the baud rate as needed
 serial_port = serial.Serial('COM3', 9600, timeout=1)
 
-# Initialize the last send time
-last_send_time = 0
+movement_history = []
 is_recording = False
-recorded_commands = []
-
-def store_command_locally(direction_x, direction_y):
-    recorded_commands.append((direction_x, direction_y))
-
-#def store_commands_in_db():
-#    conn = psycopg2.connect(**db_config)
-#    cursor = conn.cursor()
-#    cursor.executemany("INSERT INTO commands (direction_x, direction_y) VALUES (%s, %s)", recorded_commands)
-#    conn.commit()
-#    conn.close()
-
-def playback_commands():
-    for command in recorded_commands:
-        direction_x, direction_y = command
-        
-        # Logic to calculate motor speeds and directions (as per the active file excerpt)
-        if direction_y < 0:  # Forward
-            motor_a_speed = motor_b_speed = abs(direction_y)
-        elif direction_y > 0:  # Backward
-            motor_a_speed = motor_b_speed = -abs(direction_y)
-        else:  # Stop
-            motor_a_speed = motor_b_speed = 0
-
-        if direction_x > 0:  # Turning right
-            motor_b_speed -= direction_x
-            motor_a_speed = min(255, motor_a_speed + abs(direction_x))
-        elif direction_x < 0:  # Turning left
-            motor_a_speed -= abs(direction_x)
-            motor_b_speed = min(255, motor_b_speed + abs(direction_x))
-
-        motor_a_speed = max(-255, min(255, motor_a_speed))
-        motor_b_speed = max(-255, min(255, motor_b_speed))
-
-        motor_a_direction = '1' if motor_a_speed >= 0 else '0'
-        motor_b_direction = '1' if motor_b_speed >= 0 else '0'
-
-        motor_a_speed_abs = abs(motor_a_speed)
-        motor_b_speed_abs = abs(motor_b_speed)
-
-        # Construct commands as per the active file excerpt
-        command_a = f"A,{motor_a_speed_abs},{motor_a_direction}\n"
-        command_b = f"B,{motor_b_speed_abs},{motor_b_direction}\n"
-
-        # Write commands to serial port
-        serial_port.write(command_a.encode())
-        serial_port.write(command_b.encode())
 
 def on_message(ws, message):
 
@@ -98,11 +41,11 @@ def on_message(ws, message):
 
         # Adjust for turning
         if direction_x > 0:  # Turning right
-            motor_b_speed -= direction_x
-            motor_a_speed = min(255, motor_a_speed + abs(direction_x))
+            motor_a_speed = abs(direction_y)  # Use the base speed or another logic for speed calculation
+            motor_b_speed = -abs(direction_y)  # Reverse direction for opposite motor
         elif direction_x < 0:  # Turning left
-            motor_a_speed -= abs(direction_x)
-            motor_b_speed = min(255, motor_b_speed + abs(direction_x))
+            motor_a_speed = -abs(direction_y)  # Reverse direction for opposite motor
+            motor_b_speed = abs(direction_y)  # Use the base speed or another logic for speed calculation
 
         # Ensure motor speeds are within -255 to 255 range
         motor_a_speed = max(-255, min(255, motor_a_speed))
@@ -119,16 +62,48 @@ def on_message(ws, message):
         # Construct and send commands
         command_a = f"A,{motor_a_speed_abs},{motor_a_direction}\n"
         command_b = f"B,{motor_b_speed_abs},{motor_b_direction}\n"
-        print(f"Sending command for motor A: {command_a}")
-        print(f"Sending command for motor B: {command_b}")
+
+        # Record the movement
+        if is_recording:
+            movement_record = {"command_a": command_a, "command_b": command_b, "timestamp": time.time()}
+            movement_history.append(movement_record)
+        
         serial_port.write(command_a.encode())
         serial_port.write(command_b.encode())
     else:
         print("message_data is not a dictionary.", message_data)
 
-    # Optionally, send data to the serial port
-    #print(f"Sending command for motor A: {command_a}")
-    #print(f"Sending command for motor B: {command_b}")
+
+def replay_path():
+    if not movement_history:
+        print("No path recorded.")
+        return
+
+    last_timestamp = None
+    for record in movement_history:
+        # If using timestamps, calculate the delay needed
+        if last_timestamp is not None:
+            time.sleep(record["timestamp"] - last_timestamp)
+        
+        # Send the recorded commands
+        serial_port.write(record["command_a"].encode())
+        serial_port.write(record["command_b"].encode())
+        
+        # Update last_timestamp if using timestamps
+        last_timestamp = record["timestamp"]
+
+    print("Path replay finished.")
+
+def start_recording():
+    global is_recording_enabled
+    is_recording_enabled = True
+    print("Recording started.")
+
+def stop_recording():
+    global is_recording_enabled
+    is_recording_enabled = False
+    print("Recording stopped.")
+
 
 def on_error(ws, error):
     print(error)
